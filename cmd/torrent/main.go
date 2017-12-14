@@ -21,6 +21,8 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"strconv"
+	"os/signal"
 )
 
 func torrentBar(t *torrent.Torrent) {
@@ -146,6 +148,8 @@ func main() {
 	}
 	if flags.Addr != nil {
 		clientConfig.ListenAddr = flags.Addr.String()
+	} else {
+		clientConfig.ListenAddr = ":" + strconv.Itoa(getOpenPort())
 	}
 	if flags.Seed {
 		clientConfig.Seed = true
@@ -182,4 +186,25 @@ func main() {
 		fmt.Printf("%s: %s\n", kv.Key, kv.Value)
 	})
 	envpprof.Stop()
+}
+
+func getOpenPort() int {
+	for i := 50000; i < 50100; i++ {
+		if isPortOpen(i) {
+			return i
+		}
+	}
+	return 50007
+}
+
+func isPortOpen(port int) bool {
+	host := ":" + strconv.Itoa(port)
+	server, err := net.Listen("tcp", host)
+
+	if err != nil {
+		return false
+	}
+
+	server.Close()
+	return true
 }
