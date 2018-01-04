@@ -22,7 +22,6 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
 	"strconv"
-	"os/signal"
 )
 
 func torrentBar(t *torrent.Torrent) {
@@ -155,6 +154,7 @@ func main() {
 		clientConfig.Seed = true
 	}
 	if flags.UploadRate != -1 {
+		log.Println("Upload rate set properly")
 		clientConfig.UploadRateLimiter = rate.NewLimiter(rate.Limit(flags.UploadRate), 256<<10)
 	}
 	if flags.DownloadRate != -1 {
