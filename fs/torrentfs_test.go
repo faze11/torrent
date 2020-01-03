@@ -2,6 +2,7 @@ package torrentfs
 
 import (
 	"context"
+	netContext "context"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -18,7 +19,6 @@ import (
 	"github.com/anacrolix/missinggo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	netContext "golang.org/x/net/context"
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/internal/testutil"
@@ -88,13 +88,13 @@ func TestUnmountWedged(t *testing.T) {
 			t.Log(err)
 		}
 	}()
-	client, err := torrent.NewClient(&torrent.Config{
-		DataDir:         filepath.Join(layout.BaseDir, "incomplete"),
-		DisableTrackers: true,
-		NoDHT:           true,
-		DisableTCP:      true,
-		DisableUTP:      true,
-	})
+	cfg := torrent.NewDefaultClientConfig()
+	cfg.DataDir = filepath.Join(layout.BaseDir, "incomplete")
+	cfg.DisableTrackers = true
+	cfg.NoDHT = true
+	cfg.DisableTCP = true
+	cfg.DisableUTP = true
+	client, err := torrent.NewClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
 	tt, err := client.AddTorrent(layout.Metainfo)
@@ -165,16 +165,17 @@ func TestDownloadOnDemand(t *testing.T) {
 	layout, err := newGreetingLayout()
 	require.NoError(t, err)
 	defer layout.Destroy()
-	seeder, err := torrent.NewClient(&torrent.Config{
-		DataDir:         layout.Completed,
-		DisableTrackers: true,
-		NoDHT:           true,
-		ListenAddr:      "localhost:0",
-		Seed:            true,
-	})
+	cfg := torrent.NewDefaultClientConfig()
+	cfg.DataDir = layout.Completed
+	cfg.DisableTrackers = true
+	cfg.NoDHT = true
+	cfg.Seed = true
+	cfg.ListenPort = 0
+	cfg.ListenHost = torrent.LoopbackListenHost
+	seeder, err := torrent.NewClient(cfg)
 	require.NoError(t, err)
 	defer seeder.Close()
-	testutil.ExportStatusWriter(seeder, "s")
+	defer testutil.ExportStatusWriter(seeder, "s")()
 	// Just to mix things up, the seeder starts with the data, but the leecher
 	// starts with the metainfo.
 	seederTorrent, err := seeder.AddMagnet(fmt.Sprintf("magnet:?xt=urn:btih:%s", layout.Metainfo.HashInfoBytes().HexString()))
@@ -184,26 +185,20 @@ func TestDownloadOnDemand(t *testing.T) {
 		<-seederTorrent.GotInfo()
 		seederTorrent.VerifyData()
 	}()
-	leecher, err := torrent.NewClient(&torrent.Config{
-		DisableTrackers: true,
-		NoDHT:           true,
-		ListenAddr:      "localhost:0",
-		DisableTCP:      true,
-		DefaultStorage:  storage.NewMMap(filepath.Join(layout.BaseDir, "download")),
-		// This can be used to check if clients can connect to other clients
-		// with the same ID.
-		// PeerID: seeder.PeerID(),
-	})
+	cfg = torrent.NewDefaultClientConfig()
+	cfg.DisableTrackers = true
+	cfg.NoDHT = true
+	cfg.DisableTCP = true
+	cfg.DefaultStorage = storage.NewMMap(filepath.Join(layout.BaseDir, "download"))
+	cfg.ListenHost = torrent.LoopbackListenHost
+	cfg.ListenPort = 0
+	leecher, err := torrent.NewClient(cfg)
 	require.NoError(t, err)
-	testutil.ExportStatusWriter(leecher, "l")
+	testutil.ExportStatusWriter(leecher, "l")()
 	defer leecher.Close()
-	leecherTorrent, _ := leecher.AddTorrent(layout.Metainfo)
-	leecherTorrent.AddPeers([]torrent.Peer{
-		{
-			IP:   missinggo.AddrIP(seeder.ListenAddr()),
-			Port: missinggo.AddrPort(seeder.ListenAddr()),
-		},
-	})
+	leecherTorrent, err := leecher.AddTorrent(layout.Metainfo)
+	require.NoError(t, err)
+	leecherTorrent.AddClientPeer(seeder)
 	fs := New(leecher)
 	defer fs.Destroy()
 	root, _ := fs.Root()

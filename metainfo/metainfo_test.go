@@ -112,7 +112,7 @@ func testUnmarshal(t *testing.T, input string, expected *MetaInfo) {
 
 func TestUnmarshal(t *testing.T) {
 	testUnmarshal(t, `de`, &MetaInfo{})
-	testUnmarshal(t, `d4:infoe`, &MetaInfo{})
+	testUnmarshal(t, `d4:infoe`, nil)
 	testUnmarshal(t, `d4:infoabce`, nil)
 	testUnmarshal(t, `d4:infodee`, &MetaInfo{InfoBytes: []byte("de")})
 }
@@ -127,4 +127,13 @@ func TestMetainfoWithStringURLList(t *testing.T) {
 	mi, err := LoadFromFile("testdata/flat-url-list.torrent")
 	require.NoError(t, err)
 	assert.Len(t, mi.UrlList, 1)
+}
+
+// https://github.com/anacrolix/torrent/issues/247
+//
+// The decoder buffer wasn't cleared before starting the next dict item after
+// a syntax error on a field with the ignore_unmarshal_type_error tag.
+func TestStringCreationDate(t *testing.T) {
+	var mi MetaInfo
+	assert.NoError(t, bencode.Unmarshal([]byte("d13:creation date23:29.03.2018 22:18:14 UTC4:infodee"), &mi))
 }

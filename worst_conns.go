@@ -1,15 +1,24 @@
 package torrent
 
-import "container/heap"
+import (
+	"container/heap"
+	"fmt"
+	"unsafe"
+
+	"github.com/anacrolix/multiless"
+)
 
 func worseConn(l, r *connection) bool {
-	if l.useful() != r.useful() {
-		return r.useful()
+	less, ok := multiless.New().Bool(
+		l.useful(), r.useful()).CmpInt64(
+		l.lastHelpful().Sub(r.lastHelpful()).Nanoseconds()).CmpInt64(
+		l.completedHandshake.Sub(r.completedHandshake).Nanoseconds()).Uint32(
+		l.peerPriority(), r.peerPriority()).Uintptr(
+		uintptr(unsafe.Pointer(l)), uintptr(unsafe.Pointer(r))).LessOk()
+	if !ok {
+		panic(fmt.Sprintf("cannot differentiate %#v and %#v", l, r))
 	}
-	if !l.lastHelpful().Equal(r.lastHelpful()) {
-		return l.lastHelpful().Before(r.lastHelpful())
-	}
-	return l.completedHandshake.Before(r.completedHandshake)
+	return less
 }
 
 type worseConnSlice struct {

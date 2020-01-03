@@ -14,7 +14,7 @@ import (
 	"github.com/anacrolix/torrent/mmap_span"
 )
 
-type mmapStorage struct {
+type mmapClientImpl struct {
 	baseDir string
 	pc      PieceCompletion
 }
@@ -24,13 +24,13 @@ func NewMMap(baseDir string) ClientImpl {
 }
 
 func NewMMapWithCompletion(baseDir string, completion PieceCompletion) ClientImpl {
-	return &mmapStorage{
+	return &mmapClientImpl{
 		baseDir: baseDir,
 		pc:      completion,
 	}
 }
 
-func (s *mmapStorage) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (t TorrentImpl, err error) {
+func (s *mmapClientImpl) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (t TorrentImpl, err error) {
 	span, err := mMapTorrent(info, s.baseDir)
 	t = &mmapTorrentStorage{
 		infoHash: infoHash,
@@ -40,14 +40,14 @@ func (s *mmapStorage) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (
 	return
 }
 
-func (s *mmapStorage) Close() error {
+func (s *mmapClientImpl) Close() error {
 	return s.pc.Close()
 }
 
 type mmapTorrentStorage struct {
 	infoHash metainfo.Hash
-	span     mmap_span.MMapSpan
-	pc       PieceCompletion
+	span     *mmap_span.MMapSpan
+	pc       PieceCompletionGetSetter
 }
 
 func (ts *mmapTorrentStorage) Piece(p metainfo.Piece) PieceImpl {
@@ -61,12 +61,11 @@ func (ts *mmapTorrentStorage) Piece(p metainfo.Piece) PieceImpl {
 }
 
 func (ts *mmapTorrentStorage) Close() error {
-	ts.pc.Close()
 	return ts.span.Close()
 }
 
 type mmapStoragePiece struct {
-	pc PieceCompletion
+	pc PieceCompletionGetSetter
 	p  metainfo.Piece
 	ih metainfo.Hash
 	io.ReaderAt
@@ -78,7 +77,10 @@ func (me mmapStoragePiece) pieceKey() metainfo.PieceKey {
 }
 
 func (sp mmapStoragePiece) Completion() Completion {
-	c, _ := sp.pc.Get(sp.pieceKey())
+	c, err := sp.pc.Get(sp.pieceKey())
+	if err != nil {
+		panic(err)
+	}
 	return c
 }
 
@@ -92,7 +94,8 @@ func (sp mmapStoragePiece) MarkNotComplete() error {
 	return nil
 }
 
-func mMapTorrent(md *metainfo.Info, location string) (mms mmap_span.MMapSpan, err error) {
+func mMapTorrent(md *metainfo.Info, location string) (mms *mmap_span.MMapSpan, err error) {
+	mms = &mmap_span.MMapSpan{}
 	defer func() {
 		if err != nil {
 			mms.Close()

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/boltdb/bolt"
+	bolt "github.com/etcd-io/bbolt"
 
 	"github.com/anacrolix/torrent/metainfo"
 )
@@ -35,6 +35,7 @@ func NewBoltPieceCompletion(dir string) (ret PieceCompletion, err error) {
 	if err != nil {
 		return
 	}
+	db.NoSync = true
 	ret = &boltPieceCompletion{db}
 	return
 }
