@@ -1,3 +1,37 @@
+# faze11/torrent
+
+## Getting set up locally
+
+```cd /faze11/torrent/cmd/torrent```
+```go install``
+
+Use go get ... to fetch any unfound depencies while trying to build
+
+Application will be installed to ~/go/bin/torrent
+
+## Syncing with forked repo
+Reference: https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/syncing-a-fork
+
+Fetch the upstream branch
+```git fetch upstream```
+
+Ensure you are on the master branch
+```git checkout master```
+
+Merge commits from the upstream/master branch
+```git merge upstream/master```
+
+Fix and conficts and commit the merge
+
+## Setting script to launch on magnet links
+
+Install SwiftDefaultApps preferences pane: https://github.com/Lord-Kamina/SwiftDefaultApps
+
+Open System Preferences > SwiftDefaultApps > URI Schemes 
+set "magnet" to "dltorrent.app
+
+Optionally remove preferences pane afterwards
+
 # torrent
 
 [![Join the chat at https://gitter.im/anacrolix/torrent](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/anacrolix/torrent?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
