@@ -206,7 +206,7 @@ func mainErr() error {
 		clientConfig.Seed = true
 	}
 	if flags.UploadRate != -1 {
-		log.Println("Upload rate set properly")
+		log.Printf("Upload rate set properly: %d", flags.UploadRate)
 		clientConfig.UploadRateLimiter = rate.NewLimiter(rate.Limit(flags.UploadRate), 256<<10)
 	}
 	if flags.DownloadRate != -1 {
