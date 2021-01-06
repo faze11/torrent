@@ -175,7 +175,7 @@ func TestDownloadOnDemand(t *testing.T) {
 	seeder, err := torrent.NewClient(cfg)
 	require.NoError(t, err)
 	defer seeder.Close()
-	defer testutil.ExportStatusWriter(seeder, "s")()
+	defer testutil.ExportStatusWriter(seeder, "s", t)()
 	// Just to mix things up, the seeder starts with the data, but the leecher
 	// starts with the metainfo.
 	seederTorrent, err := seeder.AddMagnet(fmt.Sprintf("magnet:?xt=urn:btih:%s", layout.Metainfo.HashInfoBytes().HexString()))
@@ -194,7 +194,7 @@ func TestDownloadOnDemand(t *testing.T) {
 	cfg.ListenPort = 0
 	leecher, err := torrent.NewClient(cfg)
 	require.NoError(t, err)
-	testutil.ExportStatusWriter(leecher, "l")()
+	testutil.ExportStatusWriter(leecher, "l", t)()
 	defer leecher.Close()
 	leecherTorrent, err := leecher.AddTorrent(layout.Metainfo)
 	require.NoError(t, err)
@@ -206,15 +206,24 @@ func TestDownloadOnDemand(t *testing.T) {
 	var attr fuse.Attr
 	node.Attr(netContext.Background(), &attr)
 	size := attr.Size
-	resp := &fuse.ReadResponse{
-		Data: make([]byte, size),
-	}
+	data := make([]byte, size)
 	h, err := node.(fusefs.NodeOpener).Open(context.TODO(), nil, nil)
 	require.NoError(t, err)
-	h.(fusefs.HandleReader).Read(netContext.Background(), &fuse.ReadRequest{
-		Size: int(size),
-	}, resp)
-	assert.EqualValues(t, testutil.GreetingFileContents, resp.Data)
+
+	// torrent.Reader.Read no longer tries to fill the entire read buffer, so this is a ReadFull for
+	// fusefs.
+	var n int
+	for n < len(data) {
+		resp := fuse.ReadResponse{Data: data[n:]}
+		err := h.(fusefs.HandleReader).Read(netContext.Background(), &fuse.ReadRequest{
+			Size:   int(size) - n,
+			Offset: int64(n),
+		}, &resp)
+		assert.NoError(t, err)
+		n += len(resp.Data)
+	}
+
+	assert.EqualValues(t, testutil.GreetingFileContents, data)
 }
 
 func TestIsSubPath(t *testing.T) {

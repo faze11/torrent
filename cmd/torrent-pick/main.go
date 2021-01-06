@@ -24,16 +24,15 @@ import (
 
 // fmt.Fprintf(os.Stderr, "Usage: %s \n", os.Args[0])
 
-func resolvedPeerAddrs(ss []string) (ret []torrent.Peer, err error) {
+func resolvedPeerAddrs(ss []string) (ret []torrent.PeerInfo, err error) {
 	for _, s := range ss {
 		var addr *net.TCPAddr
 		addr, err = net.ResolveTCPAddr("tcp", s)
 		if err != nil {
 			return
 		}
-		ret = append(ret, torrent.Peer{
-			IP:   addr.IP,
-			Port: addr.Port,
+		ret = append(ret, torrent.PeerInfo{
+			Addr: addr,
 		})
 	}
 	return
@@ -175,6 +174,7 @@ func main() {
 	}
 
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 waitDone:
 	for {
 		select {

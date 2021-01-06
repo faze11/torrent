@@ -19,16 +19,13 @@ import (
 	"github.com/anacrolix/torrent/storage"
 )
 
-var DefaultHTTPUserAgent = "Go-Torrent/1.0"
-
 // Probably not safe to modify this after it's given to a Client.
 type ClientConfig struct {
 	// Store torrent file data in this directory unless .DefaultStorage is
 	// specified.
 	DataDir string `long:"data-dir" description:"directory to store downloaded torrent data"`
-	// The address to listen for new uTP and TCP bittorrent protocol
-	// connections. DHT shares a UDP socket with uTP unless configured
-	// otherwise.
+	// The address to listen for new uTP and TCP BitTorrent protocol connections. DHT shares a UDP
+	// socket with uTP unless configured otherwise.
 	ListenHost              func(network string) string
 	ListenPort              int
 	NoDefaultPortForwarding bool
@@ -39,7 +36,7 @@ type ClientConfig struct {
 
 	// Don't create a DHT.
 	NoDHT            bool `long:"disable-dht"`
-	DhtStartingNodes dht.StartingNodesGetter
+	DhtStartingNodes func(network string) dht.StartingNodesGetter
 	// Never send chunks to peers.
 	NoUpload bool `long:"no-upload"`
 	// Disable uploading even when it isn't fair.
@@ -68,7 +65,7 @@ type ClientConfig struct {
 	DisableTCP bool `long:"disable-tcp"`
 	// Called to instantiate storage for each added torrent. Builtin backends
 	// are in the storage package. If not set, the "file" implementation is
-	// used.
+	// used (and Closed when the Client is Closed).
 	DefaultStorage storage.ClientImpl
 
 	HeaderObfuscationPolicy HeaderObfuscationPolicy
@@ -76,11 +73,6 @@ type ClientConfig struct {
 	CryptoProvides mse.CryptoMethod
 	// Chooses the crypto method to use when receiving connections with header obfuscation.
 	CryptoSelector mse.CryptoSelector
-
-	// Sets usage of Socks5 Proxy. Authentication should be included in the url if needed.
-	// Examples: socks5://demo:demo@192.168.99.100:1080
-	// 			 http://proxy.domain.com:3128
-	ProxyURL string
 
 	IPBlocklist      iplist.Ranger
 	DisableIPv6      bool `long:"disable-ipv6"`
@@ -90,11 +82,8 @@ type ClientConfig struct {
 	Debug  bool `help:"enable debugging"`
 	Logger log.Logger
 
-	// HTTPProxy defines proxy for HTTP requests.
-	// Format: func(*Request) (*url.URL, error),
-	// or result of http.ProxyURL(HTTPProxy).
-	// By default, it is composed from ClientConfig.ProxyURL,
-	// if not set explicitly in ClientConfig struct
+	// Defines proxy for HTTP requests, such as for trackers. It's commonly set from the result of
+	// "net/http".ProxyURL(HTTPProxy).
 	HTTPProxy func(*http.Request) (*url.URL, error)
 	// HTTPUserAgent changes default UserAgent for HTTP requests
 	HTTPUserAgent string
@@ -113,6 +102,7 @@ type ClientConfig struct {
 	MinDialTimeout             time.Duration
 	EstablishedConnsPerTorrent int
 	HalfOpenConnsPerTorrent    int
+	TotalHalfOpenConns         int
 	// Maximum number of peer addresses in reserve.
 	TorrentPeersHighWater int
 	// Minumum number of peers before effort is made to obtain more peers.
@@ -128,15 +118,30 @@ type ClientConfig struct {
 	PublicIp4 net.IP
 	PublicIp6 net.IP
 
+	// Accept rate limiting affects excessive connection attempts from IPs that fail during
+	// handshakes or request torrents that we don't have.
 	DisableAcceptRateLimiting bool
 	// Don't add connections that have the same peer ID as an existing
 	// connection for a given Torrent.
-	dropDuplicatePeerIds bool
+	DropDuplicatePeerIds bool
+	// Drop peers that are complete if we are also complete and have no use for the peer. This is a
+	// bit of a special case, since a peer could also be useless if they're just not interested, or
+	// we don't intend to obtain all of a torrent's data.
+	DropMutuallyCompletePeers bool
 
 	ConnTracker *conntrack.Instance
 
 	// OnQuery hook func
 	DHTOnQuery func(query *krpc.Msg, source net.Addr) (propagate bool)
+
+	DefaultRequestStrategy requestStrategyMaker
+
+	Extensions PeerExtensionBits
+
+	DisableWebtorrent bool
+	DisableWebseeds   bool
+
+	Callbacks Callbacks
 }
 
 func (cfg *ClientConfig) SetListenAddr(addr string) *ClientConfig {
@@ -149,7 +154,7 @@ func (cfg *ClientConfig) SetListenAddr(addr string) *ClientConfig {
 
 func NewDefaultClientConfig() *ClientConfig {
 	cc := &ClientConfig{
-		HTTPUserAgent:                  DefaultHTTPUserAgent,
+		HTTPUserAgent:                  "Go-Torrent/1.0",
 		ExtendedHandshakeClientVersion: "go.torrent dev 20181121",
 		Bep20:                          "-GT0002-",
 		UpnpID:                         "anacrolix/torrent",
@@ -157,14 +162,19 @@ func NewDefaultClientConfig() *ClientConfig {
 		MinDialTimeout:                 3 * time.Second,
 		EstablishedConnsPerTorrent:     50,
 		HalfOpenConnsPerTorrent:        25,
+		TotalHalfOpenConns:             100,
 		TorrentPeersHighWater:          500,
 		TorrentPeersLowWater:           50,
 		HandshakesTimeout:              4 * time.Second,
-		DhtStartingNodes:               dht.GlobalBootstrapAddrs,
-		ListenHost:                     func(string) string { return "" },
-		UploadRateLimiter:              unlimited,
-		DownloadRateLimiter:            unlimited,
-		ConnTracker:                    conntrack.NewInstance(),
+		DhtStartingNodes: func(network string) dht.StartingNodesGetter {
+			return func() ([]dht.Addr, error) { return dht.GlobalBootstrapAddrs(network) }
+		},
+		ListenHost:                func(string) string { return "" },
+		UploadRateLimiter:         unlimited,
+		DownloadRateLimiter:       unlimited,
+		ConnTracker:               conntrack.NewInstance(),
+		DisableAcceptRateLimiting: true,
+		DropMutuallyCompletePeers: true,
 		HeaderObfuscationPolicy: HeaderObfuscationPolicy{
 			Preferred:        true,
 			RequirePreferred: false,
@@ -173,6 +183,10 @@ func NewDefaultClientConfig() *ClientConfig {
 		CryptoProvides: mse.AllSupportedCrypto,
 		ListenPort:     42069,
 		Logger:         log.Default,
+
+		DefaultRequestStrategy: RequestStrategyDuplicateRequestTimeout(5 * time.Second),
+
+		Extensions: defaultPeerExtensionBytes(),
 	}
 	//cc.ConnTracker.SetNoMaxEntries()
 	//cc.ConnTracker.Timeout = func(conntrack.Entry) time.Duration { return 0 }

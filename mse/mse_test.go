@@ -79,12 +79,13 @@ func handshakeTest(t testing.TB, ia []byte, aData, bData string, cryptoProvides 
 	}()
 	go func() {
 		defer wg.Done()
-		b, cm, err := ReceiveHandshake(b, sliceIter([][]byte{[]byte("nope"), []byte("yep"), []byte("maybe")}), cryptoSelect)
-		require.NoError(t, err)
-		assert.Equal(t, cryptoSelect(cryptoProvides), cm)
+		res := ReceiveHandshakeEx(b, sliceIter([][]byte{[]byte("nope"), []byte("yep"), []byte("maybe")}), cryptoSelect)
+		require.NoError(t, res.error)
+		assert.EqualValues(t, "yep", res.SecretKey)
+		b := res.ReadWriter
+		assert.Equal(t, cryptoSelect(cryptoProvides), res.CryptoMethod)
 		go b.Write([]byte(bData))
-		// Need to be exact here, as there are several reads, and net.Pipe is
-		// most synchronous.
+		// Need to be exact here, as there are several reads, and net.Pipe is most synchronous.
 		msg := make([]byte, len(ia)+len(aData))
 		n, _ := io.ReadFull(b, msg[:])
 		if n != len(msg) {
@@ -249,6 +250,31 @@ func BenchmarkPipeRC4(t *testing.B) {
 		}
 		if !bytes.Equal(a, b) {
 			t.FailNow()
+		}
+	}
+}
+
+func BenchmarkSkeysReceive(b *testing.B) {
+	var skeys [][]byte
+	for range iter.N(100000) {
+		skeys = append(skeys, make([]byte, 20))
+	}
+	fillRand(b, skeys...)
+	initSkey := skeys[len(skeys)/2]
+	//c := qt.New(b)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range iter.N(b.N) {
+		initiator, receiver := net.Pipe()
+		go func() {
+			_, _, err := InitiateHandshake(initiator, initSkey, nil, AllSupportedCrypto)
+			if err != nil {
+				panic(err)
+			}
+		}()
+		res := ReceiveHandshakeEx(receiver, sliceIter(skeys), DefaultCryptoSelector)
+		if res.error != nil {
+			panic(res.error)
 		}
 	}
 }

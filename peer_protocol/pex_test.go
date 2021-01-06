@@ -1,10 +1,14 @@
 package peer_protocol
 
 import (
+	"bufio"
+	"bytes"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/anacrolix/dht/v2/krpc"
 	"github.com/anacrolix/torrent/bencode"
 )
 
@@ -23,4 +27,38 @@ func TestEmptyPexMsg(t *testing.T) {
 	t.Logf("%q", b)
 	require.NoError(t, err)
 	require.NoError(t, bencode.Unmarshal(b, &pm))
+}
+
+func TestMarshalPexMessage(t *testing.T) {
+	addr := krpc.NodeAddr{IP: net.IP{127, 0, 0, 1}, Port: 0x55aa}
+	f := PexPrefersEncryption | PexOutgoingConn
+	pm := new(PexMsg)
+	pm.Added = append(pm.Added, addr)
+	pm.AddedFlags = append(pm.AddedFlags, f)
+
+	b, err := bencode.Marshal(pm)
+	require.NoError(t, err)
+
+	pexExtendedId := ExtensionNumber(7)
+	msg := pm.Message(pexExtendedId)
+	expected := []byte("\x00\x00\x00\x4c\x14\x07d5:added6:\x7f\x00\x00\x01\x55\xaa7:added.f1:\x116:added60:8:added6.f0:7:dropped0:8:dropped60:e")
+	b, err = msg.MarshalBinary()
+	require.NoError(t, err)
+	require.EqualValues(t, b, expected)
+
+	msg = Message{}
+	dec := Decoder{
+		R:         bufio.NewReader(bytes.NewBuffer(b)),
+		MaxLength: 128,
+	}
+	pmOut := PexMsg{}
+	err = dec.Decode(&msg)
+	require.NoError(t, err)
+	require.EqualValues(t, Extended, msg.Type)
+	require.EqualValues(t, pexExtendedId, msg.ExtendedID)
+	err = bencode.Unmarshal(msg.ExtendedPayload, &pmOut)
+	require.NoError(t, err)
+	require.EqualValues(t, len(pm.Added), len(pmOut.Added))
+	require.EqualValues(t, pm.Added[0].IP, pmOut.Added[0].IP)
+	require.EqualValues(t, pm.Added[0].Port, pmOut.Added[0].Port)
 }

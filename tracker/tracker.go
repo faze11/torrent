@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/anacrolix/dht/v2/krpc"
 )
@@ -35,8 +36,8 @@ type AnnounceResponse struct {
 type AnnounceEvent int32
 
 func (e AnnounceEvent) String() string {
-	// See BEP 3, "event".
-	return []string{"empty", "completed", "started", "stopped"}[e]
+	// See BEP 3, "event", and https://github.com/anacrolix/torrent/issues/416#issuecomment-751427001.
+	return []string{"", "completed", "started", "stopped"}[e]
 }
 
 const (
@@ -65,10 +66,21 @@ type Announce struct {
 	Context   context.Context
 }
 
+// The code *is* the documentation.
+const DefaultTrackerAnnounceTimeout = 15 * time.Second
+
 func (me Announce) Do() (res AnnounceResponse, err error) {
 	_url, err := url.Parse(me.TrackerUrl)
 	if err != nil {
 		return
+	}
+	if me.Context == nil {
+		// This is just to maintain the old behaviour that should be a timeout of 15s. Users can
+		// override it by providing their own Context. See comments elsewhere about longer timeouts
+		// acting as rate limiting overloaded trackers.
+		ctx, cancel := context.WithTimeout(context.Background(), DefaultTrackerAnnounceTimeout)
+		defer cancel()
+		me.Context = ctx
 	}
 	switch _url.Scheme {
 	case "http", "https":

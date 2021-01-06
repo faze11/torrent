@@ -23,12 +23,12 @@ func r(i, b, l pp.Integer) request {
 	return request{i, chunkSpec{b, l}}
 }
 
-// Check the given Request is correct for various torrent offsets.
+// Check the given request is correct for various torrent offsets.
 func TestTorrentRequest(t *testing.T) {
 	const s = 472183431 // Length of torrent.
 	for _, _case := range []struct {
 		off int64   // An offset into the torrent.
-		req request // The expected Request. The zero value means !ok.
+		req request // The expected request. The zero value means !ok.
 	}{
 		// Invalid offset.
 		{-1, request{}},
@@ -80,7 +80,7 @@ func BenchmarkUpdatePiecePriorities(b *testing.B) {
 		numPieces   = 13410
 		pieceLength = 256 << 10
 	)
-	cl := &Client{config: &ClientConfig{}}
+	cl := &Client{config: TestingConfig()}
 	cl.initLogger()
 	t := cl.newTorrent(metainfo.Hash{}, nil)
 	require.NoError(b, t.setInfo(&metainfo.Info{
@@ -96,7 +96,7 @@ func BenchmarkUpdatePiecePriorities(b *testing.B) {
 	}
 	assert.Len(b, t.readers, 7)
 	for i := 0; i < int(t.numPieces()); i += 3 {
-		t.completedPieces.Set(i, true)
+		t._completedPieces.Set(i, true)
 	}
 	t.DownloadPieces(0, t.numPieces())
 	for range iter.N(b.N) {
@@ -155,9 +155,9 @@ func TestPieceHashFailed(t *testing.T) {
 	tt.setChunkSize(2)
 	require.NoError(t, tt.setInfoBytes(mi.InfoBytes))
 	tt.cl.lock()
-	tt.pieces[1].dirtyChunks.AddRange(0, 3)
+	tt.pieces[1]._dirtyChunks.AddRange(0, 3)
 	require.True(t, tt.pieceAllDirty(1))
-	tt.pieceHashed(1, false)
+	tt.pieceHashed(1, false, nil)
 	// Dirty chunks should be cleared so we can try again.
 	require.False(t, tt.pieceAllDirty(1))
 	tt.cl.unlock()
@@ -183,7 +183,7 @@ func TestTorrentMetainfoIncompleteMetadata(t *testing.T) {
 	defer nc.Close()
 
 	var pex PeerExtensionBits
-	pex.SetBit(pp.ExtensionBitExtended)
+	pex.SetBit(pp.ExtensionBitExtended, true)
 	hr, err := pp.Handshake(nc, &ih, [20]byte{}, pex)
 	require.NoError(t, err)
 	assert.True(t, hr.PeerExtensionBits.GetBit(pp.ExtensionBitExtended))

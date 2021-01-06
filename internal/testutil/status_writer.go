@@ -5,23 +5,24 @@ import (
 	"io"
 	"net/http"
 	"sync"
+	"testing"
 
-	"github.com/anacrolix/missinggo"
+	_ "github.com/anacrolix/envpprof"
 )
 
 type StatusWriter interface {
 	WriteStatus(io.Writer)
 }
 
-// The key is the route pattern. The value is nil when the resource is
-// released.
+// The key is the route pattern. The value is nil when the resource is released.
 var (
 	mu  sync.Mutex
 	sws = map[string]StatusWriter{}
 )
 
-func ExportStatusWriter(sw StatusWriter, path string) (release func()) {
-	pattern := fmt.Sprintf("/%s/%s", missinggo.GetTestName(), path)
+func ExportStatusWriter(sw StatusWriter, path string, t *testing.T) (release func()) {
+	pattern := fmt.Sprintf("/%s/%s", t.Name(), path)
+	t.Logf("exporting status path %q", pattern)
 	release = func() {
 		mu.Lock()
 		defer mu.Unlock()

@@ -6,10 +6,14 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 )
 
+type ClientImplCloser interface {
+	ClientImpl
+	Close() error
+}
+
 // Represents data storage for an unspecified torrent.
 type ClientImpl interface {
 	OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (TorrentImpl, error)
-	Close() error
 }
 
 // Data storage bound to a torrent.
@@ -18,7 +22,8 @@ type TorrentImpl interface {
 	Close() error
 }
 
-// Interacts with torrent piece data.
+// Interacts with torrent piece data. Optional interfaces to implement include io.WriterTo, such as
+// when a piece supports a more efficient way to write out incomplete chunks
 type PieceImpl interface {
 	// These interfaces are not as strict as normally required. They can
 	// assume that the parameters are appropriate for the dimensions of the
