@@ -295,13 +295,10 @@ func downloadErr() error {
 	if flags.Mmap {
 		clientConfig.DefaultStorage = storage.NewMMap("")
 	}
-	if flags.Addr != nil {
+	if flags.Addr != "" {
 		clientConfig.SetListenAddr(flags.Addr)
 	} else {
-		clientConfig.SetListenAddr(":" + strconv.Itoa(getOpenPort()))
-	}
-	if flags.Seed {
-		clientConfig.Seed = true
+		clientConfig.SetListenAddr(fmt.Sprintf(":%d", getOpenPort()))
 	}
 	if flags.UploadRate != -1 {
 		log.Printf("Upload rate set properly: %d", flags.UploadRate)
@@ -363,7 +360,7 @@ func outputStats(cl *torrent.Client) {
 }
 
 func getOpenPort() int {
-	for i := 50000; i < 50100; i++ {
+	for i := 5000; i < 5100; i++ {
 		if isPortOpen(i) {
 			return i
 		}
